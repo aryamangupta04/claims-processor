@@ -361,6 +361,12 @@ Respond with ONLY the action text, nothing else."""
     return fallback
 
 
+EQUIVALENT_TYPES = {
+    "HOSPITAL_BILL": ["PHARMACY_BILL", "HOSPITAL_BILL"],
+    "PHARMACY_BILL": ["HOSPITAL_BILL", "PHARMACY_BILL"],
+}
+
+
 def _verify_documents_with_vision(docs: list[DocumentInput]) -> tuple[list[dict], bool]:
     """Use vision model to verify uploaded documents match their claimed types.
     Returns (mismatches, vision_succeeded). If vision fails, returns ([], False)."""
@@ -380,10 +386,15 @@ def _verify_documents_with_vision(docs: list[DocumentInput]) -> tuple[list[dict]
             if result:
                 any_succeeded = True
                 if result.get("matches_claimed_type") is False:
+                    detected = result.get("detected_type", "")
+                    # Allow equivalent billing document types
+                    acceptable = EQUIVALENT_TYPES.get(claimed_type, [claimed_type])
+                    if detected in acceptable:
+                        continue
                     mismatches.append({
                         "file": doc.file_name or doc.file_id,
                         "claimed_type": claimed_type,
-                        "detected_type": result.get("detected_type"),
+                        "detected_type": detected,
                         "explanation": result.get("mismatch_explanation", "Document does not match the selected type"),
                     })
         return mismatches, any_succeeded

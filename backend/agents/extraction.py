@@ -13,19 +13,24 @@ def extract_data(claim: ClaimSubmission, simulate_failure: bool = False) -> tupl
     start = time.time()
 
     if simulate_failure:
+        # Simulated failure: still extract basic data from content fields, but skip LLM validation
+        # This demonstrates graceful degradation — partial data, lower confidence, but still usable
+        extracted = _extract_from_documents_basic(claim)
+        extracted.confidence = 0.55
         duration = (time.time() - start) * 1000
         trace = TraceStep(
             agent="extraction",
             status=TraceStepStatus.ERROR,
             duration_ms=duration,
             details={
-                "error": "Extraction service unavailable (simulated failure)",
-                "fallback": "Using available metadata for decision",
+                "error": "Extraction service partially unavailable (simulated failure)",
+                "fallback": "Basic extraction completed, LLM validation skipped",
+                "patient_name": extracted.patient_name,
+                "diagnosis": extracted.diagnosis,
+                "confidence": extracted.confidence,
             },
-            message="Extraction agent failed — proceeding with limited data",
+            message="Extraction agent partially failed — basic data extracted, LLM validation skipped. Confidence reduced.",
         )
-        extracted = _extract_from_metadata(claim)
-        extracted.confidence = 0.4
         return extracted, trace
 
     try:
@@ -66,6 +71,50 @@ def extract_data(claim: ClaimSubmission, simulate_failure: bool = False) -> tupl
         extracted = _extract_from_metadata(claim)
         extracted.confidence = 0.5
         return extracted, trace
+
+
+def _extract_from_documents_basic(claim: ClaimSubmission) -> ExtractedData:
+    """Basic extraction from document content fields without LLM validation."""
+    patient_name = None
+    doctor_name = None
+    diagnosis = None
+    treatment = None
+    hospital_name = claim.hospital_name
+    total_amount = None
+    line_items = []
+
+    for doc in claim.documents:
+        if not doc.content:
+            continue
+        content = doc.content
+        if content.get("patient_name") and not patient_name:
+            patient_name = content["patient_name"]
+        if content.get("doctor_name") and not doctor_name:
+            doctor_name = content["doctor_name"]
+        if content.get("diagnosis") and not diagnosis:
+            diagnosis = content["diagnosis"]
+        if content.get("treatment") and not treatment:
+            treatment = content["treatment"]
+        if content.get("hospital_name") and not hospital_name:
+            hospital_name = content["hospital_name"]
+        if content.get("line_items"):
+            line_items.extend(content["line_items"])
+        if content.get("total") is not None and total_amount is None:
+            total_amount = content["total"]
+
+    if total_amount is None:
+        total_amount = claim.claimed_amount
+
+    return ExtractedData(
+        patient_name=patient_name,
+        doctor_name=doctor_name,
+        hospital_name=hospital_name,
+        diagnosis=diagnosis,
+        treatment=treatment,
+        line_items=line_items,
+        total_amount=total_amount,
+        confidence=0.55,
+    )
 
 
 def _extract_from_documents(claim: ClaimSubmission) -> ExtractedData:
