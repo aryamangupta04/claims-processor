@@ -4,8 +4,8 @@ from __future__ import annotations
 import os
 
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
-ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "aryamangupta004@gmail.com")
-FROM_EMAIL = "claims@resend.dev"
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "aryamangupta2004@gmail.com")
+FROM_EMAIL = "onboarding@resend.dev"
 
 
 def is_configured() -> bool:
