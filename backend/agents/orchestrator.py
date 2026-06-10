@@ -308,6 +308,17 @@ def process_claim(claim: ClaimSubmission) -> ClaimDecision:
     final_confidence = adj_result.confidence - confidence_penalty
     final_confidence = max(final_confidence, 0.1)
 
+    # If confidence is too low, don't auto-approve — route to manual review
+    if final_confidence < 0.6 and adj_result.decision in (Decision.APPROVED, Decision.PARTIAL):
+        return ClaimDecision(
+            claim_id=claim_id,
+            status=Decision.MANUAL_REVIEW,
+            claimed_amount=claim.claimed_amount,
+            confidence=final_confidence,
+            summary=f"Claim processing completed but confidence is low ({final_confidence:.0%}). Routed to manual review for verification.",
+            trace=trace,
+        )
+
     summary = _build_summary(adj_result, claim, component_failures)
 
     # Use LLM to generate a more natural summary
