@@ -194,7 +194,7 @@ def _seed_users(conn: sqlite3.Connection, policy: dict):
             (
                 member["member_id"],
                 member["name"],
-                f"{member['member_id'].lower()}@company.com",
+                "aryamangupta004@gmail.com",
                 hash_password(member["member_id"].lower()),
                 "member",
             ),

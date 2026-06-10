@@ -14,6 +14,7 @@ from models import ClaimSubmission, ClaimDecision, Decision
 from agents.orchestrator import process_claim
 from policy_engine import load_policy
 import database
+import email_service
 
 app = FastAPI(
     title="Plum Claims Processing System",
@@ -82,6 +83,16 @@ def _process_claim_background(claim: ClaimSubmission, claim_id: str):
             ),
         )
         conn.commit()
+
+        # Notify admin if manual review needed
+        if decision.status.value == "MANUAL_REVIEW":
+            member = database.get_member(claim.member_id)
+            email_service.notify_admin_manual_review(
+                claim_id=claim_id,
+                member_name=member["name"] if member else claim.member_id,
+                amount=claim.claimed_amount,
+                reason=decision.summary,
+            )
 
         # Save uploaded files
         doc_dicts = [d.model_dump() for d in claim.documents]
@@ -263,6 +274,20 @@ async def admin_override_claim(claim_id: str, override: dict, username: str = De
         (new_status, f"Admin override: {reason}", claim_id),
     )
     conn.commit()
+
+    # Notify member of the decision
+    claim_row = conn.execute("SELECT member_id, member_name FROM claims WHERE claim_id=?", (claim_id,)).fetchone()
+    if claim_row:
+        member = database.get_member(claim_row["member_id"])
+        if member and member.get("email"):
+            email_service.notify_member_status_update(
+                to_email=member["email"],
+                claim_id=claim_id,
+                member_name=claim_row["member_name"] or claim_row["member_id"],
+                status=new_status,
+                summary=f"Admin override: {reason}",
+            )
+
     return {"claim_id": claim_id, "status": new_status, "overridden_by": username}
 
 
