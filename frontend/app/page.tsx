@@ -72,14 +72,15 @@ export default function Home() {
 
   const pollForResult = async (claimId: string) => {
     setPolling(true);
-    const maxAttempts = 30;
+    const maxAttempts = 120;
     for (let i = 0; i < maxAttempts; i++) {
-      await new Promise((r) => setTimeout(r, 1000));
+      await new Promise((r) => setTimeout(r, 2000));
       try {
         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/claims/${claimId}`);
         const data = await res.json();
-        if (data.status && data.status !== "UNDER_REVIEW") {
-          setResult(data);
+        setResult(data);
+        // Stop polling only when we get a final decision (not UNDER_REVIEW or MANUAL_REVIEW)
+        if (data.status && data.status !== "UNDER_REVIEW" && data.status !== "MANUAL_REVIEW") {
           setPolling(false);
           return;
         }
@@ -110,7 +111,7 @@ export default function Home() {
         localStorage.setItem("lastClaimId", data.claim_id);
       }
 
-      if (data.status === "UNDER_REVIEW") {
+      if (data.status === "UNDER_REVIEW" || data.status === "MANUAL_REVIEW") {
         pollForResult(data.claim_id);
       }
     } catch (e: any) {
