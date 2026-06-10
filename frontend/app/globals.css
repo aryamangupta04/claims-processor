@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+:root {
+  --plum-dark: #1A0533;
+  --plum-purple: #6B21A8;
+  --plum-accent: #9333EA;
+  --plum-light: #EDE9FE;
+  --plum-orange: #F97316;
+  --plum-pink: #EC4899;
+  --background: #0D0118;
+  --foreground: #F5F3FF;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-jetbrains);
+}
+
+html {
+  font-size: 100%;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
