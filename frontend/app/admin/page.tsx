@@ -262,12 +262,14 @@ export default function AdminPage() {
                       {selectedClaim.approved_amount != null ? `₹${selectedClaim.approved_amount.toLocaleString()}` : "—"}
                     </p>
                   </div>
-                  <div>
-                    <span className="text-base text-purple-500">Confidence</span>
-                    <p className="text-purple-100 text-xl mt-1">
-                      {selectedClaim.confidence != null ? `${(selectedClaim.confidence * 100).toFixed(0)}%` : "—"}
-                    </p>
-                  </div>
+                  {selectedClaim.status !== "ACTION_REQUIRED" && selectedClaim.status !== "MANUAL_REVIEW" && (
+                    <div>
+                      <span className="text-base text-purple-500">Confidence</span>
+                      <p className="text-purple-100 text-xl mt-1">
+                        {selectedClaim.confidence != null ? `${(selectedClaim.confidence * 100).toFixed(0)}%` : "—"}
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Override */}
