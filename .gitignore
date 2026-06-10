@@ -1,0 +1,16 @@
+venv/
+__pycache__/
+*.pyc
+.next/
+node_modules/
+.pytest_cache/
+build.log
+mise.toml
+*.db
+*.db-wal
+*.db-shm
+backend/uploads/
+.env
+CLAUDE.md
+AGENTS.md
+
