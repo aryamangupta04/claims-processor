@@ -27,7 +27,7 @@ export default function Home() {
     }
     const lastClaimId = localStorage.getItem("lastClaimId");
     if (lastClaimId) {
-      fetch(`http://localhost:8000/api/claims/${lastClaimId}`)
+      fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/claims/${lastClaimId}`)
         .then((res) => res.json())
         .then((data) => {
           if (data.claim_id) setResult(data);
@@ -41,7 +41,7 @@ export default function Home() {
     e.preventDefault();
     setLoginError("");
     try {
-      const res = await fetch("http://localhost:8000/api/auth/login", {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ member_id: loginId, password: loginPassword }),
@@ -76,7 +76,7 @@ export default function Home() {
     for (let i = 0; i < maxAttempts; i++) {
       await new Promise((r) => setTimeout(r, 1000));
       try {
-        const res = await fetch(`http://localhost:8000/api/claims/${claimId}`);
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/claims/${claimId}`);
         const data = await res.json();
         if (data.status && data.status !== "UNDER_REVIEW") {
           setResult(data);
@@ -93,7 +93,7 @@ export default function Home() {
     setError(null);
     setResult(null);
     try {
-      const res = await fetch("http://localhost:8000/api/claims", {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/claims`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(claim),

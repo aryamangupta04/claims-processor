@@ -42,7 +42,7 @@ export default function AdminPage() {
     e.preventDefault();
     setLoginError("");
     try {
-      const res = await fetch("http://localhost:8000/api/admin/login", {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/admin/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password }),
@@ -63,8 +63,8 @@ export default function AdminPage() {
     setLoading(true);
     try {
       const [claimsRes, statsRes] = await Promise.all([
-        fetch("http://localhost:8000/api/admin/claims", { headers: { Authorization: auth } }),
-        fetch("http://localhost:8000/api/admin/stats", { headers: { Authorization: auth } }),
+        fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/admin/claims`, { headers: { Authorization: auth } }),
+        fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/admin/stats`, { headers: { Authorization: auth } }),
       ]);
       if (claimsRes.ok) setClaims((await claimsRes.json()).claims || []);
       if (statsRes.ok) setStats(await statsRes.json());
@@ -83,7 +83,7 @@ export default function AdminPage() {
 
   const loadClaimDetail = async (claimId: string) => {
     try {
-      const res = await fetch(`http://localhost:8000/api/admin/claims/${claimId}`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/admin/claims/${claimId}`, {
         headers: { Authorization: authHeader },
       });
       if (res.ok) setSelectedClaim(await res.json());
@@ -94,7 +94,7 @@ export default function AdminPage() {
     const reason = prompt("Reason for override:");
     if (!reason) return;
     try {
-      await fetch(`http://localhost:8000/api/admin/claims/${claimId}/override`, {
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/admin/claims/${claimId}/override`, {
         method: "POST",
         headers: { Authorization: authHeader, "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus, reason }),
