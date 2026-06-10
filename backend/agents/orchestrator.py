@@ -180,7 +180,95 @@ def process_claim(claim: ClaimSubmission) -> ClaimDecision:
             trace=trace,
         )
 
-    # Stage 2.6: Hospital name mismatch check
+    # Stage 2.6: Patient name verification — does the document belong to this member?
+    if extracted.patient_name and claim.member_id:
+        member = database.get_member(claim.member_id)
+        if member:
+            member_name = member["name"].lower().strip()
+            doc_name = extracted.patient_name.lower().strip()
+            if member_name not in doc_name and doc_name not in member_name:
+                # Check if names are similar (e.g. "Rajesh" vs "Rajesh K") — partial match
+                member_parts = set(member_name.split())
+                doc_parts = set(doc_name.split())
+                overlap = member_parts & doc_parts
+                if overlap:
+                    # Partially similar — manual review
+                    trace.append(TraceStep(
+                        agent="patient_verifier",
+                        status=TraceStepStatus.FAIL,
+                        duration_ms=0,
+                        details={"member_name": member["name"], "name_on_document": extracted.patient_name, "match": "partial"},
+                        message=f"Patient name partially matches: member is '{member['name']}', document shows '{extracted.patient_name}'.",
+                    ))
+                    return ClaimDecision(
+                        claim_id=claim_id,
+                        status=Decision.MANUAL_REVIEW,
+                        claimed_amount=claim.claimed_amount,
+                        confidence=0.7,
+                        summary=f"Name partially matches: '{member['name']}' vs '{extracted.patient_name}'. Sent for manual verification.",
+                        trace=trace,
+                    )
+                else:
+                    # Completely different — reject
+                    trace.append(TraceStep(
+                        agent="patient_verifier",
+                        status=TraceStepStatus.FAIL,
+                        duration_ms=0,
+                        details={"member_name": member["name"], "name_on_document": extracted.patient_name, "match": "none"},
+                        message=f"Patient name mismatch: member is '{member['name']}' but document shows '{extracted.patient_name}'.",
+                    ))
+                    return ClaimDecision(
+                        claim_id=claim_id,
+                        status=Decision.REJECTED,
+                        claimed_amount=claim.claimed_amount,
+                        confidence=0.95,
+                        summary=f"Rejected: document belongs to '{extracted.patient_name}' but claimant is '{member['name']}'.",
+                        error_message=f"The uploaded document does not belong to you.",
+                        trace=trace,
+                    )
+
+    # Stage 2.6b: Amount verification — does the bill total match the claimed amount?
+    if extracted.total_amount and claim.claimed_amount:
+        diff = abs(extracted.total_amount - claim.claimed_amount)
+        diff_pct = diff / claim.claimed_amount if claim.claimed_amount > 0 else 0
+
+        if diff > 1 and diff_pct > 0.2:
+            # More than 20% off — reject
+            trace.append(TraceStep(
+                agent="amount_verifier",
+                status=TraceStepStatus.FAIL,
+                duration_ms=0,
+                details={"claimed_amount": claim.claimed_amount, "document_amount": extracted.total_amount, "difference_pct": f"{diff_pct:.0%}"},
+                message=f"Amount mismatch: claimed ₹{claim.claimed_amount:,.0f} but document shows ₹{extracted.total_amount:,.0f} ({diff_pct:.0%} difference).",
+            ))
+            return ClaimDecision(
+                claim_id=claim_id,
+                status=Decision.REJECTED,
+                claimed_amount=claim.claimed_amount,
+                confidence=0.92,
+                summary=f"Rejected: claimed ₹{claim.claimed_amount:,.0f} but document shows ₹{extracted.total_amount:,.0f}.",
+                error_message=f"The claimed amount does not match the document total.",
+                trace=trace,
+            )
+        elif diff > 1 and diff_pct > 0.05:
+            # 5-20% off — manual review
+            trace.append(TraceStep(
+                agent="amount_verifier",
+                status=TraceStepStatus.FAIL,
+                duration_ms=0,
+                details={"claimed_amount": claim.claimed_amount, "document_amount": extracted.total_amount, "difference_pct": f"{diff_pct:.0%}"},
+                message=f"Amount slightly off: claimed ₹{claim.claimed_amount:,.0f}, document shows ₹{extracted.total_amount:,.0f} ({diff_pct:.0%} difference).",
+            ))
+            return ClaimDecision(
+                claim_id=claim_id,
+                status=Decision.MANUAL_REVIEW,
+                claimed_amount=claim.claimed_amount,
+                confidence=0.7,
+                summary=f"Amount discrepancy: claimed ₹{claim.claimed_amount:,.0f} vs document ₹{extracted.total_amount:,.0f}. Sent for manual verification.",
+                trace=trace,
+            )
+
+    # Stage 2.6c: Hospital name mismatch check
     if claim.hospital_name and claim.hospital_name != "Other" and extracted.hospital_name:
         claimed_hospital = claim.hospital_name.lower().strip()
         doc_hospital = extracted.hospital_name.lower().strip()
