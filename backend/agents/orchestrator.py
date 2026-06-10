@@ -395,19 +395,19 @@ def _generate_llm_summary(adj_result, claim: ClaimSubmission, component_failures
         for check in adj_result.checks:
             checks_summary.append(f"{check['check']}: {check['result']} - {check['detail']}")
 
-        prompt = f"""You are writing a clear, concise summary for a health insurance claim decision. This will be read by operations staff.
+        prompt = f"""Write ONE short sentence (max 15 words) summarizing this insurance claim decision. No repetition, no jargon.
 
 Decision: {adj_result.decision.value}
-Claimed Amount: ₹{claim.claimed_amount:,.0f}
-Approved Amount: {"₹" + f"{adj_result.approved_amount:,.0f}" if adj_result.approved_amount else "N/A"}
-Member: {claim.member_id}
-Category: {claim.claim_category.value}
-Checks: {"; ".join(checks_summary)}
+Claimed: ₹{claim.claimed_amount:,.0f}
+Approved: {"₹" + f"{adj_result.approved_amount:,.0f}" if adj_result.approved_amount else "N/A"}
 Deductions: {adj_result.deductions if adj_result.deductions else "None"}
-Component Failures: {component_failures if component_failures else "None"}
 
-Write a 1-2 sentence summary explaining the decision. Be specific about amounts and reasons. No jargon.
-Respond with ONLY the summary text, nothing else."""
+Examples of good responses:
+- "Approved ₹1,350 after 10% co-pay deduction."
+- "Rejected — obesity treatment is excluded under policy."
+- "Partially approved ₹8,000 — teeth whitening excluded."
+
+Respond with ONLY the one sentence, nothing else."""
 
         result = llm_service._call_llm(prompt)
         if result and len(result.strip()) > 10:

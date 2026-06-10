@@ -274,13 +274,13 @@ export default function Home() {
                   </div>
                 )}
 
-                <p className="text-sm text-purple-200">{result.summary}</p>
-
-                {result.error_message && result.error_message !== result.summary && (
+                {result.error_message ? (
                   <div className="bg-purple-950/50 rounded-lg border border-purple-700/30 p-4">
                     <p className="text-xs text-purple-400 font-medium mb-1">What to do:</p>
                     <p className="text-sm text-purple-200">{result.error_message}</p>
                   </div>
+                ) : (
+                  <p className="text-sm text-purple-200">{result.summary}</p>
                 )}
 
                 {polling && (
