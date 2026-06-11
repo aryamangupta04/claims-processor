@@ -419,6 +419,41 @@ async def run_test_suite(request: Request):
         claim = ClaimSubmission(**claim_data)
         decision = process_claim(claim)
 
+        # Save to DB so it shows in admin dashboard
+        import json as json_save
+        decision_dict = decision.model_dump()
+        decision_dict["member_id"] = inp["member_id"]
+        decision_dict["policy_id"] = inp.get("policy_id", "PLUM_GHI_2024")
+        decision_dict["claim_category"] = inp["claim_category"]
+        decision_dict["treatment_date"] = inp["treatment_date"]
+        decision_dict["hospital_name"] = inp.get("hospital_name")
+        decision_dict["trace"] = [step.model_dump() for step in decision.trace]
+        member_info = database.get_member(inp["member_id"])
+        member_name_val = member_info["name"] if member_info else inp["member_id"]
+        conn = database.get_connection()
+        conn.execute(
+            """INSERT OR REPLACE INTO claims (claim_id, member_id, member_name, policy_id, claim_category,
+               treatment_date, claimed_amount, hospital_name, status, approved_amount, confidence, summary, trace, full_decision)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                decision.claim_id, inp["member_id"], member_name_val, inp.get("policy_id", "PLUM_GHI_2024"),
+                inp["claim_category"], inp["treatment_date"], inp["claimed_amount"],
+                inp.get("hospital_name"), decision.status.value, decision.approved_amount,
+                decision.confidence, decision.summary,
+                json_save.dumps(decision_dict.get("trace", [])), json_save.dumps(decision_dict),
+            ),
+        )
+        conn.commit()
+
+        # Send email if MANUAL_REVIEW
+        if decision.status.value == "MANUAL_REVIEW":
+            email_service.notify_admin_manual_review(
+                claim_id=decision.claim_id,
+                member_name=member_name_val,
+                amount=inp["claimed_amount"],
+                reason=decision.summary,
+            )
+
         # Clean up seeded history
         if "claims_history" in inp:
             conn.execute("DELETE FROM claims_history WHERE member_id = ? AND claim_id LIKE 'CLM_008%'", (inp["member_id"],))

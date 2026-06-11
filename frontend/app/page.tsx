@@ -129,21 +129,25 @@ export default function Home() {
     }
   };
 
-  const [testResults, setTestResults] = useState<any>(null);
+
   const [runningTests, setRunningTests] = useState(false);
 
   const runTestSuite = async () => {
     setRunningTests(true);
-    setTestResults(null);
-    setResult(null);
     setError(null);
+    setResult(null);
     try {
       const res = await fetch(`${API}/api/run-test-suite`, {
         method: "POST",
         headers: authHeaders(),
       });
       if (res.ok) {
-        setTestResults(await res.json());
+        const data = await res.json();
+        setResult({
+          status: data.passed === data.total ? "APPROVED" : "REJECTED",
+          claim_id: "TEST_SUITE",
+          summary: `Test suite complete: ${data.passed}/${data.total} passed. Results available in admin dashboard.`,
+        });
       } else {
         const errData = await res.json().catch(() => ({}));
         setError(`Test suite failed: ${errData.detail || res.status}`);
@@ -269,54 +273,16 @@ export default function Home() {
             <ClaimForm onSubmit={handleSubmit} loading={loading} user={user} />
           </div>
 
-          {/* Right: Status / Test Results */}
+          {/* Right: Status */}
           <div>
-            <p className="text-base text-purple-400 mb-4">{testResults ? "Test Suite Results" : "Claim Status"}</p>
+            <p className="text-base text-purple-400 mb-4">Claim Status</p>
 
-            {/* Test Suite Results */}
             {runningTests && (
               <div className="bg-[#130525] rounded-xl border border-purple-900/40 p-10 text-center">
                 <div className="animate-spin h-6 w-6 border-2 border-purple-400 border-t-transparent rounded-full mx-auto mb-3"></div>
-                <p className="text-sm text-purple-400">Running all 12 test cases through the LLM pipeline...</p>
+                <p className="text-sm text-purple-400">Running all 12 test cases... Results will appear in admin dashboard.</p>
               </div>
             )}
-
-            {testResults && !runningTests && (
-              <div className="bg-[#130525] rounded-xl border border-purple-900/40 p-5 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-green-400 font-medium text-sm">{testResults.passed}/{testResults.total} passed</span>
-                  <button onClick={() => setTestResults(null)} className="text-xs text-purple-500 hover:text-purple-300">Clear</button>
-                </div>
-                <div className="space-y-1.5 max-h-[500px] overflow-y-auto">
-                  {testResults.results.map((r: any) => (
-                    <details key={r.case_id} className="border border-purple-900/30 rounded-lg bg-[#0a0215]">
-                      <summary className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-purple-900/20 text-sm">
-                        <span className={r.matched ? "text-green-400" : "text-red-400"}>
-                          {r.matched ? "✓" : "✗"}
-                        </span>
-                        <span className="text-purple-200 flex-1">{r.case_id}: {r.case_name}</span>
-                        <span className="text-xs text-purple-500">{r.actual_decision}</span>
-                      </summary>
-                      <div className="px-3 pb-3 text-xs space-y-1">
-                        <p className="text-purple-400">Expected: {r.expected_decision || "N/A"} | Got: <span className={r.matched ? "text-green-300" : "text-red-300"}>{r.actual_decision}</span> | Confidence: {(r.confidence * 100).toFixed(0)}%</p>
-                        <p className="text-purple-300">{r.summary}</p>
-                        {r.trace?.map((step: any, idx: number) => (
-                          <p key={idx} className="text-purple-500">
-                            <span className={step.status === "PASS" || step.status === "COMPLETE" ? "text-green-500" : step.status === "FAIL" || step.status === "STOP" ? "text-red-500" : "text-orange-500"}>
-                              {step.status === "PASS" || step.status === "COMPLETE" ? "✓" : step.status === "FAIL" || step.status === "STOP" ? "✗" : "◐"}
-                            </span>{" "}{step.agent}: {step.message?.substring(0, 100)}
-                          </p>
-                        ))}
-                      </div>
-                    </details>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Normal claim status (hidden when test results showing) */}
-            {!testResults && !runningTests && (<>
-            <p className="text-base text-purple-400 mb-4"></p>
 
             {loading && (
               <div className="bg-[#130525] rounded-xl border border-purple-900/40 p-10 text-center">
@@ -387,7 +353,6 @@ export default function Home() {
                 <p className="text-sm text-purple-500">Submit a claim to see its status here</p>
               </div>
             )}
-            </>)}
           </div>
         </div>
       </div>
