@@ -16,11 +16,11 @@ def extract_data(claim: ClaimSubmission, simulate_failure: bool = False) -> tupl
         # Simulated failure: still extract basic data from content fields, but skip LLM validation
         # This demonstrates graceful degradation — partial data, lower confidence, but still usable
         extracted = _extract_from_documents_basic(claim)
-        extracted.confidence = 0.55
+        extracted.confidence = 0.65
         duration = (time.time() - start) * 1000
         trace = TraceStep(
             agent="extraction",
-            status=TraceStepStatus.ERROR,
+            status=TraceStepStatus.PARTIAL,
             duration_ms=duration,
             details={
                 "error": "Extraction service partially unavailable (simulated failure)",

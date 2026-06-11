@@ -23,6 +23,8 @@ export default function AdminPage() {
   const [selectedClaim, setSelectedClaim] = useState<any>(null);
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [testResults, setTestResults] = useState<any>(null);
+  const [runningTests, setRunningTests] = useState(false);
 
   const [token, setToken] = useState("");
   const authHeader = token ? `Bearer ${token}` : "Basic " + btoa(`${username}:${password}`);
@@ -93,6 +95,19 @@ export default function AdminPage() {
       });
       if (res.ok) setSelectedClaim(await res.json());
     } catch {}
+  };
+
+  const runTestSuite = async () => {
+    setRunningTests(true);
+    setTestResults(null);
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/run-test-suite`, {
+        method: "POST",
+        headers: { Authorization: authHeader },
+      });
+      if (res.ok) setTestResults(await res.json());
+    } catch {}
+    setRunningTests(false);
   };
 
   const handleOverride = async (claimId: string, newStatus: string) => {
@@ -363,6 +378,81 @@ export default function AdminPage() {
               </div>
             )}
           </div>
+        </div>
+
+        {/* Test Suite Section */}
+        <div className="mt-8 border-t border-purple-900/30 pt-6">
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-base text-purple-400">Eval Test Suite</p>
+            <button
+              onClick={runTestSuite}
+              disabled={runningTests}
+              className="px-4 py-2 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-500 disabled:opacity-50 transition-colors"
+            >
+              {runningTests ? "Running 12 test cases..." : "Run All 12 Test Cases"}
+            </button>
+          </div>
+
+          {runningTests && (
+            <div className="flex items-center gap-3 p-4">
+              <div className="animate-spin h-4 w-4 border-2 border-purple-400 border-t-transparent rounded-full"></div>
+              <p className="text-sm text-purple-400">Processing all test cases through the LLM pipeline...</p>
+            </div>
+          )}
+
+          {testResults && (
+            <div>
+              <div className="flex gap-4 mb-4 text-sm">
+                <span className="text-green-400 font-medium">{testResults.passed}/{testResults.total} passed</span>
+                {testResults.passed < testResults.total && (
+                  <span className="text-red-400">{testResults.total - testResults.passed} failed</span>
+                )}
+              </div>
+
+              <div className="space-y-2 max-h-[500px] overflow-y-auto">
+                {testResults.results.map((r: any) => (
+                  <details key={r.case_id} className="border border-purple-900/30 rounded-lg bg-[#0a0215]">
+                    <summary className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-purple-900/20">
+                      <span className={r.matched ? "text-green-400" : "text-red-400"}>
+                        {r.matched ? "✓" : "✗"}
+                      </span>
+                      <span className="text-purple-200 text-sm flex-1">{r.case_id}: {r.case_name}</span>
+                      <span className="text-xs text-purple-500">{r.actual_decision}</span>
+                    </summary>
+                    <div className="px-4 pb-4 space-y-2 text-sm">
+                      <div className="flex gap-6 text-xs">
+                        <span className="text-purple-500">Expected: <span className="text-purple-200">{r.expected_decision || "N/A"}</span></span>
+                        <span className="text-purple-500">Got: <span className={r.matched ? "text-green-300" : "text-red-300"}>{r.actual_decision}</span></span>
+                        {r.expected_amount != null && (
+                          <span className="text-purple-500">Amount: <span className={r.actual_amount === r.expected_amount ? "text-green-300" : "text-red-300"}>₹{r.actual_amount?.toLocaleString()}</span> (expected ₹{r.expected_amount?.toLocaleString()})</span>
+                        )}
+                        <span className="text-purple-500">Confidence: {(r.confidence * 100).toFixed(0)}%</span>
+                      </div>
+                      <p className="text-purple-300 text-xs">{r.summary}</p>
+                      {r.trace && (
+                        <div className="mt-2 space-y-1">
+                          {r.trace.map((step: any, idx: number) => (
+                            <p key={idx} className="text-xs text-purple-500">
+                              <span className={
+                                step.status === "PASS" || step.status === "COMPLETE" ? "text-green-500" :
+                                step.status === "FAIL" || step.status === "STOP" ? "text-red-500" :
+                                step.status === "ERROR" ? "text-orange-500" : "text-purple-400"
+                              }>
+                                {step.status === "PASS" || step.status === "COMPLETE" ? "✓" :
+                                 step.status === "FAIL" || step.status === "STOP" ? "✗" :
+                                 step.status === "PARTIAL" ? "◐" : "!"}{" "}
+                              </span>
+                              {step.agent}: {step.message}
+                            </p>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </details>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </main>

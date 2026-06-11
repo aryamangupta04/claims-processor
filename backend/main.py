@@ -360,6 +360,88 @@ async def get_member_claims(member_id: str, request: Request):
     return {"claims": history}
 
 
+@app.post("/api/run-test-suite")
+async def run_test_suite(request: Request):
+    """Run all 12 test cases through the pipeline and return results."""
+    auth.require_member(request)
+    import json as json_mod
+    from pathlib import Path
+
+    test_cases_path = Path(__file__).parent.parent / "test_cases.json"
+    if not test_cases_path.exists():
+        test_cases_path = Path(__file__).parent.parent.parent / "test_cases.json"
+
+    with open(test_cases_path) as f:
+        test_data = json_mod.load(f)
+
+    results = []
+    for tc in test_data["test_cases"]:
+        inp = tc["input"]
+        docs = []
+        for d in inp["documents"]:
+            doc = {"file_id": d.get("file_id", "F000")}
+            if "actual_type" in d: doc["actual_type"] = d["actual_type"]
+            if "quality" in d: doc["quality"] = d["quality"]
+            if "content" in d: doc["content"] = d["content"]
+            if "patient_name_on_doc" in d: doc["patient_name_on_doc"] = d["patient_name_on_doc"]
+            if "file_name" in d: doc["file_name"] = d["file_name"]
+            docs.append(doc)
+
+        claim_data = {
+            "member_id": inp["member_id"],
+            "policy_id": inp.get("policy_id", "PLUM_GHI_2024"),
+            "claim_category": inp["claim_category"],
+            "treatment_date": inp["treatment_date"],
+            "claimed_amount": inp["claimed_amount"],
+            "documents": docs,
+        }
+        if "hospital_name" in inp: claim_data["hospital_name"] = inp["hospital_name"]
+        if "ytd_claims_amount" in inp: claim_data["ytd_claims_amount"] = inp["ytd_claims_amount"]
+        if "simulate_component_failure" in inp: claim_data["simulate_component_failure"] = inp["simulate_component_failure"]
+
+        # Seed claims history for TC009
+        if "claims_history" in inp:
+            conn = database.get_connection()
+            for h in inp["claims_history"]:
+                conn.execute(
+                    "INSERT OR IGNORE INTO claims_history (member_id, claim_id, claim_date, amount, provider, status) VALUES (?, ?, ?, ?, ?, ?)",
+                    (inp["member_id"], h["claim_id"], h["date"], h["amount"], h.get("provider"), "APPROVED"),
+                )
+            conn.commit()
+
+        claim = ClaimSubmission(**claim_data)
+        decision = process_claim(claim)
+
+        # Clean up seeded history
+        if "claims_history" in inp:
+            conn.execute("DELETE FROM claims_history WHERE member_id = ? AND claim_id LIKE 'CLM_008%'", (inp["member_id"],))
+            conn.commit()
+
+        expected = tc["expected"]
+        matched = True
+        if expected.get("decision") and decision.status.value != expected["decision"]:
+            matched = False
+        if "approved_amount" in expected and expected["approved_amount"] is not None:
+            if decision.approved_amount != expected["approved_amount"]:
+                matched = False
+
+        results.append({
+            "case_id": tc["case_id"],
+            "case_name": tc["case_name"],
+            "expected_decision": expected.get("decision"),
+            "actual_decision": decision.status.value,
+            "expected_amount": expected.get("approved_amount"),
+            "actual_amount": decision.approved_amount,
+            "matched": matched,
+            "confidence": decision.confidence,
+            "summary": decision.summary,
+            "trace": [step.model_dump() for step in decision.trace],
+        })
+
+    passed = sum(1 for r in results if r["matched"])
+    return {"total": len(results), "passed": passed, "results": results}
+
+
 @app.post("/api/admin/login")
 async def admin_login(credentials: dict):
     """Verify admin credentials and return JWT token."""

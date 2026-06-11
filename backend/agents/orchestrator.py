@@ -142,6 +142,9 @@ def process_claim(claim: ClaimSubmission) -> ClaimDecision:
             extraction_failed = True
             confidence_penalty += 0.25
             component_failures.append("extraction")
+        elif extraction_trace.status == TraceStepStatus.PARTIAL:
+            confidence_penalty += 0.15
+            component_failures.append("extraction (partial)")
     except Exception as e:
         extraction_failed = True
         confidence_penalty += 0.25
