@@ -344,7 +344,7 @@ def process_claim(claim: ClaimSubmission) -> ClaimDecision:
 
     # Stage 3: Fraud Detection
     try:
-        fraud_result, fraud_trace = detect_fraud(claim)
+        fraud_result, fraud_trace = detect_fraud(claim, current_claim_id=claim_id)
         trace.append(fraud_trace)
     except Exception as e:
         component_failures.append("fraud_detector")

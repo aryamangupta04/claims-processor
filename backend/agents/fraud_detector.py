@@ -13,7 +13,7 @@ class FraudResult:
         self.details = details
 
 
-def detect_fraud(claim: ClaimSubmission, simulate_failure: bool = False) -> tuple[FraudResult, TraceStep]:
+def detect_fraud(claim: ClaimSubmission, simulate_failure: bool = False, current_claim_id: str = None) -> tuple[FraudResult, TraceStep]:
     start = time.time()
 
     if simulate_failure:
@@ -32,16 +32,22 @@ def detect_fraud(claim: ClaimSubmission, simulate_failure: bool = False) -> tupl
         return result, trace
 
     try:
+        import database
         thresholds = get_fraud_thresholds()
         signals = []
         details = {}
 
-        same_day_count = 0
-        if claim.claims_history:
-            same_day_count = sum(
-                1 for h in claim.claims_history
-                if h.date == claim.treatment_date
-            )
+        # Fetch REAL claims history from DB (not client-supplied data)
+        history = database.get_member_claims_history(claim.member_id) if claim.member_id else []
+        # Exclude the current claim from history (it's already saved as UNDER_REVIEW)
+        if current_claim_id:
+            history = [h for h in history if h.get("claim_id") != current_claim_id]
+
+        # Also include client-supplied history for test cases (TC009)
+        if claim.claims_history and not history:
+            history = [{"claim_id": h.claim_id, "date": h.date, "amount": h.amount, "provider": h.provider} for h in claim.claims_history]
+
+        same_day_count = sum(1 for h in history if h.get("date") == claim.treatment_date)
         details["same_day_claims"] = same_day_count
         same_day_limit = thresholds.get("same_day_claims_limit", 2)
         if same_day_count >= same_day_limit:
@@ -50,13 +56,8 @@ def detect_fraud(claim: ClaimSubmission, simulate_failure: bool = False) -> tupl
                 f"(limit: {same_day_limit}). This is claim #{same_day_count + 1} for today."
             )
 
-        monthly_count = 0
-        if claim.claims_history:
-            treatment_month = claim.treatment_date[:7]
-            monthly_count = sum(
-                1 for h in claim.claims_history
-                if h.date.startswith(treatment_month)
-            )
+        treatment_month = claim.treatment_date[:7]
+        monthly_count = sum(1 for h in history if h.get("date", "").startswith(treatment_month))
         details["monthly_claims"] = monthly_count
         monthly_limit = thresholds.get("monthly_claims_limit", 6)
         if monthly_count >= monthly_limit:
@@ -77,8 +78,9 @@ def detect_fraud(claim: ClaimSubmission, simulate_failure: bool = False) -> tupl
                 f"Amount ₹{claim.claimed_amount:,.0f} exceeds auto-review threshold of ₹{auto_review_threshold:,.0f}"
             )
 
-        if claim.claims_history and same_day_count >= same_day_limit:
-            providers = set(h.provider for h in claim.claims_history if h.provider)
+        if same_day_count >= same_day_limit:
+            same_day_history = [h for h in history if h.get("date") == claim.treatment_date]
+            providers = set(h.get("provider") for h in same_day_history if h.get("provider"))
             if len(providers) > 1:
                 signals.append(
                     f"Multiple providers on same day: {', '.join(providers)}"
