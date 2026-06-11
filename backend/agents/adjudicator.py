@@ -123,16 +123,20 @@ def adjudicate(
 
     checks.append({"check": "fraud_check", "result": "PASS", "detail": "No fraud signals"})
 
-    # Submission deadline check (only for recent dates — test data uses historical dates)
+    # Submission deadline check: compare treatment_date vs submission_date
     from datetime import datetime
     from policy_engine import get_submission_rules
     submission_rules = get_submission_rules()
     deadline_days = submission_rules.get("deadline_days_from_treatment", 30)
     try:
         treat_date = datetime.strptime(claim.treatment_date, "%Y-%m-%d").date()
-        today = datetime.now().date()
-        days_since = (today - treat_date).days
-        if days_since > deadline_days and days_since < 365:
+        # Use submission_date from claim if provided, otherwise use treatment_date (assume same-day submission for tests)
+        if getattr(claim, 'submission_date', None):
+            submission_date = datetime.strptime(claim.submission_date, "%Y-%m-%d").date()
+        else:
+            submission_date = treat_date  # No submission_date = assume submitted same day as treatment
+        days_since = (submission_date - treat_date).days
+        if days_since > deadline_days:
             checks.append({
                 "check": "submission_deadline",
                 "result": "FAIL",
@@ -156,7 +160,7 @@ def adjudicate(
                 message=f"Rejected: Submission deadline exceeded ({days_since} days, limit {deadline_days}).",
             )
             return result, trace
-        checks.append({"check": "submission_deadline", "result": "PASS", "detail": f"Within submission deadline"})
+        checks.append({"check": "submission_deadline", "result": "PASS", "detail": f"Submitted {days_since} days after treatment (within {deadline_days} day limit)"})
     except (ValueError, TypeError):
         checks.append({"check": "submission_deadline", "result": "PASS", "detail": "Date check skipped"})
 

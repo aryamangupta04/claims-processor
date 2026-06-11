@@ -72,6 +72,7 @@ class ClaimSubmission(BaseModel):
     hospital_name: Optional[str] = None
     documents: list[DocumentInput]
     ytd_claims_amount: Optional[float] = 0
+    submission_date: Optional[str] = None
     simulate_component_failure: Optional[bool] = False
 
 

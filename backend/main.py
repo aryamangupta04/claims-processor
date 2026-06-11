@@ -152,6 +152,11 @@ async def submit_claim(claim: ClaimSubmission, request: Request):
         claim.member_id = user["member_id"]
         claim.member_name = user.get("name")
 
+    # Set submission_date to today if not provided
+    if not claim.submission_date:
+        from datetime import date
+        claim.submission_date = date.today().isoformat()
+
     # Verify member exists
     member = database.get_member(claim.member_id)
     if not member:
@@ -409,6 +414,8 @@ async def run_test_suite(request: Request):
                 )
             conn.commit()
 
+        # Set submission_date = treatment_date for test cases (simulates same-day submission)
+        claim_data["submission_date"] = inp["treatment_date"]
         claim = ClaimSubmission(**claim_data)
         decision = process_claim(claim)
 
