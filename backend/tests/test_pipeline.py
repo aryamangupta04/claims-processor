@@ -262,27 +262,74 @@ def test_tc008_per_claim_exceeded():
 
 # TC009: Fraud Signal — Multiple Same-Day Claims
 def test_tc009_fraud_same_day():
+    # Seed prior same-day claims into the DATABASE — fraud detection reads
+    # server-side history, never client-supplied data.
+    import database
+    conn = database.get_connection()
+    conn.execute("DELETE FROM claims_history WHERE member_id = ?", ("EMP008",))
+    for cid, amt, provider in [
+        ("CLM_0081", 1200, "City Clinic A"),
+        ("CLM_0082", 1800, "City Clinic B"),
+        ("CLM_0083", 2100, "Wellness Center"),
+    ]:
+        conn.execute(
+            "INSERT INTO claims_history (member_id, claim_id, claim_date, amount, provider, status) VALUES (?, ?, ?, ?, ?, ?)",
+            ("EMP008", cid, "2024-10-30", amt, provider, "APPROVED"),
+        )
+    conn.commit()
+
     claim = ClaimSubmission(
         member_id="EMP008",
         policy_id="PLUM_GHI_2024",
         claim_category="CONSULTATION",
         treatment_date="2024-10-30",
         claimed_amount=4800,
-        claims_history=[
-            {"claim_id": "CLM_0081", "date": "2024-10-30", "amount": 1200, "provider": "City Clinic A"},
-            {"claim_id": "CLM_0082", "date": "2024-10-30", "amount": 1800, "provider": "City Clinic B"},
-            {"claim_id": "CLM_0083", "date": "2024-10-30", "amount": 2100, "provider": "Wellness Center"},
-        ],
         documents=[
             {"file_id": "F017", "actual_type": "PRESCRIPTION", "content": {"diagnosis": "Migraine", "doctor_name": "Dr. S. Khan"}},
             {"file_id": "F018", "actual_type": "HOSPITAL_BILL", "content": {"total": 4800}},
         ],
     )
     result = process_claim(claim)
+    # Clean up seeded rows so other tests are unaffected
+    conn.execute("DELETE FROM claims_history WHERE member_id = ?", ("EMP008",))
+    conn.commit()
+
     assert result.status == Decision.MANUAL_REVIEW
     # Must include specific signals
     trace_text = str(result.trace)
     assert "same-day" in trace_text.lower() or "same_day" in trace_text.lower()
+
+
+def test_fraud_bypass_closed():
+    """Client cannot hide history: DB says 3 same-day claims, request says nothing."""
+    import database
+    conn = database.get_connection()
+    conn.execute("DELETE FROM claims_history WHERE member_id = ?", ("EMP003",))
+    for i in range(3):
+        conn.execute(
+            "INSERT INTO claims_history (member_id, claim_id, claim_date, amount, provider, status) VALUES (?, ?, ?, ?, ?, ?)",
+            ("EMP003", f"CLM_BYP{i}", "2024-11-05", 1500, f"Clinic {i}", "APPROVED"),
+        )
+    conn.commit()
+
+    claim = ClaimSubmission(
+        member_id="EMP003",
+        policy_id="PLUM_GHI_2024",
+        claim_category="CONSULTATION",
+        treatment_date="2024-11-05",
+        claimed_amount=2000,
+        documents=[
+            {"file_id": "FB01", "actual_type": "PRESCRIPTION", "content": {"diagnosis": "Fever", "doctor_name": "Dr. A"}},
+            {"file_id": "FB02", "actual_type": "HOSPITAL_BILL", "content": {"total": 2000}},
+        ],
+    )
+    result = process_claim(claim)
+    conn.execute("DELETE FROM claims_history WHERE member_id = ?", ("EMP003",))
+    conn.commit()
+
+    trace_text = str(result.trace).lower()
+    assert "same-day" in trace_text or "same_day" in trace_text
+    assert result.status == Decision.MANUAL_REVIEW
 
 
 # TC010: Network Hospital — Discount Applied

@@ -43,9 +43,6 @@ def detect_fraud(claim: ClaimSubmission, simulate_failure: bool = False, current
         if current_claim_id:
             history = [h for h in history if h.get("claim_id") != current_claim_id]
 
-        # Also include client-supplied history for test cases (TC009)
-        if claim.claims_history and not history:
-            history = [{"claim_id": h.claim_id, "date": h.date, "amount": h.amount, "provider": h.provider} for h in claim.claims_history]
 
         same_day_count = sum(1 for h in history if h.get("date") == claim.treatment_date)
         details["same_day_claims"] = same_day_count
@@ -93,7 +90,7 @@ def detect_fraud(claim: ClaimSubmission, simulate_failure: bool = False, current
 
         # Use LLM for deeper pattern analysis when there are signals
         if signals:
-            llm_analysis = _analyze_fraud_patterns_with_llm(claim, signals, details)
+            llm_analysis = _analyze_fraud_patterns_with_llm(claim, signals, details, history)
             if llm_analysis:
                 details["llm_fraud_analysis"] = llm_analysis
 
@@ -123,7 +120,7 @@ def detect_fraud(claim: ClaimSubmission, simulate_failure: bool = False, current
         return result, trace
 
 
-def _analyze_fraud_patterns_with_llm(claim: ClaimSubmission, signals: list[str], details: dict) -> dict | None:
+def _analyze_fraud_patterns_with_llm(claim: ClaimSubmission, signals: list[str], details: dict, history: list[dict]) -> dict | None:
     """Use LLM to analyze fraud patterns and provide reasoning."""
     try:
         import llm_service
@@ -131,10 +128,10 @@ def _analyze_fraud_patterns_with_llm(claim: ClaimSubmission, signals: list[str],
             return None
 
         history_str = ""
-        if claim.claims_history:
+        if history:
             history_str = "\n".join(
-                f"  - {h.date}: ₹{h.amount} at {h.provider or 'unknown provider'}"
-                for h in claim.claims_history
+                f"  - {h.get('date')}: ₹{h.get('amount')} at {h.get('provider') or 'unknown provider'}"
+                for h in history
             )
 
         prompt = f"""You are a health insurance fraud analyst. Analyze this claim for fraud risk.

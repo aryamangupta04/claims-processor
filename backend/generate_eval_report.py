@@ -45,7 +45,15 @@ def run_test_case(tc):
     if "ytd_claims_amount" in inp:
         claim_data["ytd_claims_amount"] = inp["ytd_claims_amount"]
     if "claims_history" in inp:
-        claim_data["claims_history"] = inp["claims_history"]
+        # Seed prior claims into the DB (fraud detection reads server-side history)
+        import database
+        conn = database.get_connection()
+        for h in inp["claims_history"]:
+            conn.execute(
+                "INSERT INTO claims_history (member_id, claim_id, claim_date, amount, provider, status) VALUES (?, ?, ?, ?, ?, ?)",
+                (inp.get("member_id"), h["claim_id"], h["date"], h["amount"], h.get("provider"), "APPROVED"),
+            )
+        conn.commit()
     if "simulate_component_failure" in inp:
         claim_data["simulate_component_failure"] = inp["simulate_component_failure"]
 

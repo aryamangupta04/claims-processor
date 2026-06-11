@@ -62,13 +62,6 @@ class DocumentInput(BaseModel):
     mime_type: Optional[str] = None
 
 
-class ClaimHistoryItem(BaseModel):
-    claim_id: str
-    date: str
-    amount: float
-    provider: Optional[str] = None
-
-
 class ClaimSubmission(BaseModel):
     member_id: Optional[str] = None
     member_name: Optional[str] = None
@@ -79,7 +72,6 @@ class ClaimSubmission(BaseModel):
     hospital_name: Optional[str] = None
     documents: list[DocumentInput]
     ytd_claims_amount: Optional[float] = 0
-    claims_history: Optional[list[ClaimHistoryItem]] = None
     simulate_component_failure: Optional[bool] = False
 
 
