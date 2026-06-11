@@ -131,23 +131,20 @@ export default function Home() {
 
 
   const [runningTests, setRunningTests] = useState(false);
+  const [testResults, setTestResults] = useState<any>(null);
 
   const runTestSuite = async () => {
     setRunningTests(true);
     setError(null);
     setResult(null);
+    setTestResults(null);
     try {
       const res = await fetch(`${API}/api/run-test-suite`, {
         method: "POST",
         headers: authHeaders(),
       });
       if (res.ok) {
-        const data = await res.json();
-        setResult({
-          status: data.passed === data.total ? "APPROVED" : "REJECTED",
-          claim_id: "TEST_SUITE",
-          summary: `Test suite complete: ${data.passed}/${data.total} passed. Results available in admin dashboard.`,
-        });
+        setTestResults(await res.json());
       } else {
         const errData = await res.json().catch(() => ({}));
         setError(`Test suite failed: ${errData.detail || res.status}`);
@@ -280,7 +277,28 @@ export default function Home() {
             {runningTests && (
               <div className="bg-[#130525] rounded-xl border border-purple-900/40 p-10 text-center">
                 <div className="animate-spin h-6 w-6 border-2 border-purple-400 border-t-transparent rounded-full mx-auto mb-3"></div>
-                <p className="text-sm text-purple-400">Running all 12 test cases... Results will appear in admin dashboard.</p>
+                <p className="text-sm text-purple-400">Running all 12 test cases through LLM pipeline...</p>
+              </div>
+            )}
+
+            {testResults && (
+              <div className="bg-[#130525] rounded-xl border border-purple-900/40 p-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-green-400 font-medium text-sm">{testResults.passed}/{testResults.total} passed</span>
+                  <button onClick={() => setTestResults(null)} className="text-xs text-purple-500 hover:text-purple-300">Clear</button>
+                </div>
+                <p className="text-xs text-purple-500">Full traces available in admin dashboard</p>
+                <div className="space-y-1 max-h-[400px] overflow-y-auto">
+                  {testResults.results.map((r: any) => (
+                    <div key={r.case_id} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#0a0215] border border-purple-900/20">
+                      <span className={r.matched ? "text-green-400" : "text-red-400"}>
+                        {r.matched ? "✓" : "✗"}
+                      </span>
+                      <span className="text-purple-200 text-sm flex-1">{r.case_id}: {r.case_name}</span>
+                      <span className="text-xs text-purple-500">{r.actual_decision}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
