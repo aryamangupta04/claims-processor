@@ -24,16 +24,18 @@ export default function AdminPage() {
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(false);
 
-  const authHeader = "Basic " + btoa(`${username}:${password}`);
+  const [token, setToken] = useState("");
+  const authHeader = token ? `Bearer ${token}` : "Basic " + btoa(`${username}:${password}`);
 
   useEffect(() => {
     const saved = localStorage.getItem("adminSession");
     if (saved) {
-      const { username: u, password: p } = JSON.parse(saved);
+      const { username: u, password: p, token: t } = JSON.parse(saved);
       setUsername(u);
       setPassword(p);
+      setToken(t || "");
       setLoggedIn(true);
-      const header = "Basic " + btoa(`${u}:${p}`);
+      const header = t ? `Bearer ${t}` : "Basic " + btoa(`${u}:${p}`);
       loadDashboardWithAuth(header);
     }
   }, []);
@@ -48,8 +50,11 @@ export default function AdminPage() {
         body: JSON.stringify({ username, password }),
       });
       if (res.ok) {
+        const data = await res.json();
+        const t = data.token || "";
+        setToken(t);
         setLoggedIn(true);
-        localStorage.setItem("adminSession", JSON.stringify({ username, password }));
+        localStorage.setItem("adminSession", JSON.stringify({ username, password, token: t }));
         loadDashboard();
       } else {
         setLoginError("Invalid username or password");

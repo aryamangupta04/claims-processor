@@ -9,6 +9,13 @@ interface UserSession {
   role: string;
 }
 
+const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+function authHeaders(): Record<string, string> {
+  const token = localStorage.getItem("authToken");
+  return token ? { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
+}
+
 export default function Home() {
   const [user, setUser] = useState<UserSession | null>(null);
   const [loginId, setLoginId] = useState("");
@@ -27,7 +34,7 @@ export default function Home() {
     }
     const lastClaimId = localStorage.getItem("lastClaimId");
     if (lastClaimId) {
-      fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/claims/${lastClaimId}`)
+      fetch(`${API}/api/claims/${lastClaimId}`, { headers: authHeaders() })
         .then((res) => res.json())
         .then((data) => {
           if (data.claim_id) setResult(data);
@@ -41,7 +48,7 @@ export default function Home() {
     e.preventDefault();
     setLoginError("");
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/auth/login`, {
+      const res = await fetch(`${API}/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ member_id: loginId, password: loginPassword }),
@@ -58,6 +65,7 @@ export default function Home() {
       };
       setUser(session);
       localStorage.setItem("userSession", JSON.stringify(session));
+      localStorage.setItem("authToken", data.token);
     } catch {
       setLoginError("Connection error");
     }
@@ -68,6 +76,7 @@ export default function Home() {
     setResult(null);
     localStorage.removeItem("userSession");
     localStorage.removeItem("lastClaimId");
+    localStorage.removeItem("authToken");
   };
 
   const pollForResult = async (claimId: string) => {
@@ -76,7 +85,7 @@ export default function Home() {
     for (let i = 0; i < maxAttempts; i++) {
       await new Promise((r) => setTimeout(r, 2000));
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/claims/${claimId}`);
+        const res = await fetch(`${API}/api/claims/${claimId}`, { headers: authHeaders() });
         const data = await res.json();
         setResult(data);
         // Stop polling only when we get a final decision (not UNDER_REVIEW or MANUAL_REVIEW)
@@ -94,9 +103,9 @@ export default function Home() {
     setError(null);
     setResult(null);
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/claims`, {
+      const res = await fetch(`${API}/api/claims`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify(claim),
       });
       if (!res.ok) {

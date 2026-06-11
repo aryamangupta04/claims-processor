@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
@@ -15,6 +15,7 @@ from agents.orchestrator import process_claim
 from policy_engine import load_policy
 import database
 import email_service
+import auth
 
 app = FastAPI(
     title="Plum Claims Processing System",
@@ -36,10 +37,23 @@ ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = "plum2024"
 
 
-def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
-    if credentials.username != ADMIN_USERNAME or credentials.password != ADMIN_PASSWORD:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    return credentials.username
+def verify_admin(request: Request):
+    """Verify admin access — accepts JWT Bearer token or HTTP Basic auth."""
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        payload = auth.verify_token(request)
+        if payload.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="Admin access required")
+        return payload.get("name", "admin")
+    elif auth_header.startswith("Basic "):
+        import base64
+        decoded = base64.b64decode(auth_header[6:]).decode()
+        username, password = decoded.split(":", 1)
+        if username != ADMIN_USERNAME or password != ADMIN_PASSWORD:
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+        return username
+    else:
+        raise HTTPException(status_code=401, detail="Missing authorization")
 
 
 @app.on_event("startup")
@@ -127,8 +141,9 @@ def _process_claim_background(claim: ClaimSubmission, claim_id: str):
 
 
 @app.post("/api/claims")
-async def submit_claim(claim: ClaimSubmission):
-    """Submit a claim — returns immediately with UNDER_REVIEW status, processes in background."""
+async def submit_claim(claim: ClaimSubmission, request: Request):
+    """Submit a claim — requires auth. Returns immediately with UNDER_REVIEW status."""
+    user = auth.require_member(request)
     import uuid
     claim_id = f"CLM_{uuid.uuid4().hex[:8].upper()}"
 
@@ -200,8 +215,9 @@ async def submit_claim(claim: ClaimSubmission):
 
 
 @app.get("/api/claims/{claim_id}")
-async def get_claim(claim_id: str):
-    """Get claim status — used for polling."""
+async def get_claim(claim_id: str, request: Request):
+    """Get claim status — requires auth."""
+    auth.require_member(request)
     claim_data = database.get_claim(claim_id)
     if not claim_data:
         # Check if it's still UNDER_REVIEW (no full_decision yet)
@@ -223,23 +239,35 @@ async def get_claim(claim_id: str):
 
 
 @app.get("/api/claims")
-async def list_claims():
-    claims = database.get_all_claims()
+async def list_claims(request: Request):
+    """List claims — members see only their own, admins see all."""
+    user = auth.require_member(request)
+    if user["role"] == "admin":
+        claims = database.get_all_claims()
+    else:
+        conn = database.get_connection()
+        rows = conn.execute(
+            "SELECT claim_id, member_id, member_name, status, claim_category, claimed_amount, approved_amount, confidence, created_at FROM claims WHERE member_id=? ORDER BY created_at DESC",
+            (user["member_id"],),
+        ).fetchall()
+        claims = [dict(row) for row in rows]
     return {"claims": claims}
 
 
 # ============ ADMIN ENDPOINTS (require login) ============
 
 @app.get("/api/admin/claims")
-async def admin_list_claims(username: str = Depends(verify_admin)):
+async def admin_list_claims(request: Request):
     """Admin: list all claims with full details."""
+    verify_admin(request)
     claims = database.get_all_claims()
     return {"claims": claims}
 
 
 @app.get("/api/admin/claims/{claim_id}")
-async def admin_get_claim(claim_id: str, username: str = Depends(verify_admin)):
+async def admin_get_claim(claim_id: str, request: Request):
     """Admin: get full claim decision with trace."""
+    verify_admin(request)
     claim_data = database.get_claim(claim_id)
     if not claim_data:
         conn = database.get_connection()
@@ -251,8 +279,9 @@ async def admin_get_claim(claim_id: str, username: str = Depends(verify_admin)):
 
 
 @app.get("/api/admin/claims/{claim_id}/details")
-async def admin_get_claim_details(claim_id: str, username: str = Depends(verify_admin)):
+async def admin_get_claim_details(claim_id: str, request: Request):
     """Admin: get extracted claim details (for fraud review)."""
+    verify_admin(request)
     conn = database.get_connection()
     row = conn.execute("SELECT * FROM claim_details WHERE claim_id=?", (claim_id,)).fetchone()
     if not row:
@@ -261,8 +290,9 @@ async def admin_get_claim_details(claim_id: str, username: str = Depends(verify_
 
 
 @app.post("/api/admin/claims/{claim_id}/override")
-async def admin_override_claim(claim_id: str, override: dict, username: str = Depends(verify_admin)):
+async def admin_override_claim(claim_id: str, override: dict, request: Request):
     """Admin: override a claim decision."""
+    username = verify_admin(request)
     conn = database.get_connection()
     new_status = override.get("status")
     reason = override.get("reason", "Admin override")
@@ -292,8 +322,9 @@ async def admin_override_claim(claim_id: str, override: dict, username: str = De
 
 
 @app.get("/api/admin/stats")
-async def admin_stats(username: str = Depends(verify_admin)):
+async def admin_stats(request: Request):
     """Admin: dashboard stats."""
+    verify_admin(request)
     conn = database.get_connection()
     total = conn.execute("SELECT COUNT(*) FROM claims").fetchone()[0]
     approved = conn.execute("SELECT COUNT(*) FROM claims WHERE status='APPROVED'").fetchone()[0]
@@ -330,7 +361,9 @@ async def get_categories():
 
 
 @app.get("/api/members/{member_id}")
-async def get_member_endpoint(member_id: str):
+async def get_member_endpoint(member_id: str, request: Request):
+    """Get member info — can only access your own data (IDOR protection)."""
+    auth.require_own_data(request, member_id)
     member = database.get_member(member_id)
     if not member:
         raise HTTPException(status_code=404, detail="Member not found")
@@ -338,31 +371,35 @@ async def get_member_endpoint(member_id: str):
 
 
 @app.get("/api/members/{member_id}/claims")
-async def get_member_claims(member_id: str):
+async def get_member_claims(member_id: str, request: Request):
+    """Get member's claims — can only access your own (IDOR protection)."""
+    auth.require_own_data(request, member_id)
     history = database.get_member_claims_history(member_id)
     return {"claims": history}
 
 
 @app.post("/api/admin/login")
 async def admin_login(credentials: dict):
-    """Verify admin credentials and return success."""
+    """Verify admin credentials and return JWT token."""
     if credentials.get("username") == ADMIN_USERNAME and credentials.get("password") == ADMIN_PASSWORD:
-        return {"success": True, "username": ADMIN_USERNAME, "role": "admin"}
+        token = auth.create_token("ADMIN", ADMIN_USERNAME, "admin")
+        return {"success": True, "username": ADMIN_USERNAME, "role": "admin", "token": token}
     raise HTTPException(status_code=401, detail="Invalid credentials")
 
 
 @app.post("/api/auth/login")
 async def user_login(credentials: dict):
-    """Member login — returns user info for autofill."""
+    """Member login — returns JWT token + user info for autofill."""
     member_id = credentials.get("member_id", "")
     password = credentials.get("password", "")
     user = database.authenticate_user(member_id, password)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid Employee ID or password")
-    # Get full member info for autofill
     member = database.get_member(user["member_id"])
+    token = auth.create_token(user["member_id"], user["name"], user["role"])
     return {
         "success": True,
+        "token": token,
         "user": user,
         "member": member,
     }
