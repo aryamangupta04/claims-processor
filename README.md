@@ -6,13 +6,13 @@ A multi-agent AI-powered health insurance claims processing pipeline that automa
 
 ### System Flow — Member Claim Submission to Decision
 
-![Claims Architecture](docs/claims_architecture_member_decision_only.svg)
+<img src="docs/claims_architecture_member_decision_only.svg" width="75%" height="75%" />
 
 A member submits a claim through the Next.js frontend. The FastAPI backend accepts the submission, immediately returns an "Under Review" status, and processes the claim asynchronously through a 4-agent pipeline (Document Validator → Extraction Agent → Fraud Detector → Adjudicator). Each agent writes a trace step. The member sees only the final decision status; the full trace is visible to admins.
 
 ### Admin Manual Review Flow
 
-![Admin Manual Review Flow](docs/admin_manual_review_flow_no_member_email.svg)
+<img src="docs/admin_manual_review_flow_no_member_email.svg" width="75%" height="75%" />
 
 When the pipeline produces a `MANUAL_REVIEW` decision (fraud signals, high-value claims, or component failures), a Resend email alerts the admin with claim details and a direct dashboard link. The admin reviews the full trace, overrides the decision (approve/reject), and the member sees the updated status in their portal.
 
