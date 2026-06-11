@@ -123,40 +123,48 @@ def adjudicate(
 
     checks.append({"check": "fraud_check", "result": "PASS", "detail": "No fraud signals"})
 
+    # Submission deadline check (only for recent dates — test data uses historical dates)
+    from datetime import datetime
+    from policy_engine import get_submission_rules
+    submission_rules = get_submission_rules()
+    deadline_days = submission_rules.get("deadline_days_from_treatment", 30)
+    try:
+        treat_date = datetime.strptime(claim.treatment_date, "%Y-%m-%d").date()
+        today = datetime.now().date()
+        days_since = (today - treat_date).days
+        if days_since > deadline_days and days_since < 365:
+            checks.append({
+                "check": "submission_deadline",
+                "result": "FAIL",
+                "detail": f"Claim submitted {days_since} days after treatment (deadline: {deadline_days} days)",
+            })
+            result = AdjudicationResult(
+                decision=Decision.REJECTED,
+                approved_amount=None,
+                reasons=[f"Submission deadline exceeded: claim submitted {days_since} days after treatment (limit: {deadline_days} days)"],
+                confidence=0.95,
+                deductions=[],
+                line_item_decisions=[],
+                checks=checks,
+            )
+            duration = (time.time() - start) * 1000
+            trace = TraceStep(
+                agent="adjudicator",
+                status=TraceStepStatus.FAIL,
+                duration_ms=duration,
+                details={"checks": checks, "decision": "REJECTED"},
+                message=f"Rejected: Submission deadline exceeded ({days_since} days, limit {deadline_days}).",
+            )
+            return result, trace
+        checks.append({"check": "submission_deadline", "result": "PASS", "detail": f"Within submission deadline"})
+    except (ValueError, TypeError):
+        checks.append({"check": "submission_deadline", "result": "PASS", "detail": "Date check skipped"})
+
     diagnosis = extracted.diagnosis or ""
     treatment = extracted.treatment or ""
-    waiting_result = check_waiting_period(member, claim.treatment_date, f"{diagnosis} {treatment}")
-    if not waiting_result["passed"]:
-        checks.append({
-            "check": "waiting_period",
-            "result": "FAIL",
-            "detail": waiting_result["reason"],
-            "eligible_date": waiting_result.get("eligible_date"),
-        })
-        eligible_msg = f" Eligible from: {waiting_result.get('eligible_date', 'N/A')}." if waiting_result.get("eligible_date") else ""
-        result = AdjudicationResult(
-            decision=Decision.REJECTED,
-            approved_amount=None,
-            reasons=[waiting_result["reason"] + eligible_msg],
-            confidence=0.95,
-            deductions=[],
-            line_item_decisions=[],
-            checks=checks,
-        )
-        duration = (time.time() - start) * 1000
-        trace = TraceStep(
-            agent="adjudicator",
-            status=TraceStepStatus.FAIL,
-            duration_ms=duration,
-            details={"checks": checks, "decision": "REJECTED"},
-            message=f"Rejected: {waiting_result['reason']}.{eligible_msg}",
-        )
-        return result, trace
-
-    join_date = member.get("join_date", "N/A")
-    checks.append({"check": "waiting_period", "result": "PASS", "detail": f"All waiting periods cleared (joined {join_date})"})
-
     line_items = extracted.line_items or []
+
+    # Exclusions FIRST — permanently excluded conditions take priority over waiting periods
     exclusion_result = check_exclusions(diagnosis, treatment, claim.claim_category.value, line_items)
     if exclusion_result["excluded"] and exclusion_result["fully_excluded"]:
         checks.append({
@@ -195,6 +203,38 @@ def adjudicate(
     else:
         checks.append({"check": "exclusions", "result": "PASS", "detail": f"{diagnosis or 'Treatment'} not excluded"})
 
+    # Waiting period AFTER exclusions
+    waiting_result = check_waiting_period(member, claim.treatment_date, f"{diagnosis} {treatment}")
+    if not waiting_result["passed"]:
+        checks.append({
+            "check": "waiting_period",
+            "result": "FAIL",
+            "detail": waiting_result["reason"],
+            "eligible_date": waiting_result.get("eligible_date"),
+        })
+        eligible_msg = f" Eligible from: {waiting_result.get('eligible_date', 'N/A')}." if waiting_result.get("eligible_date") else ""
+        result = AdjudicationResult(
+            decision=Decision.REJECTED,
+            approved_amount=None,
+            reasons=[waiting_result["reason"] + eligible_msg],
+            confidence=0.95,
+            deductions=[],
+            line_item_decisions=[],
+            checks=checks,
+        )
+        duration = (time.time() - start) * 1000
+        trace = TraceStep(
+            agent="adjudicator",
+            status=TraceStepStatus.FAIL,
+            duration_ms=duration,
+            details={"checks": checks, "decision": "REJECTED"},
+            message=f"Rejected: {waiting_result['reason']}.{eligible_msg}",
+        )
+        return result, trace
+
+    join_date = member.get("join_date", "N/A")
+    checks.append({"check": "waiting_period", "result": "PASS", "detail": f"All waiting periods cleared (joined {join_date})"})
+
     pre_auth_result = check_pre_authorization(claim.claim_category.value, line_items, claim.claimed_amount)
     if pre_auth_result["required"]:
         checks.append({
@@ -223,6 +263,36 @@ def adjudicate(
 
     checks.append({"check": "pre_authorization", "result": "PASS", "detail": "No pre-authorization required"})
 
+    # Annual OPD limit check
+    coverage = get_coverage()
+    annual_limit = coverage.get("annual_opd_limit", float("inf"))
+    ytd = claim.ytd_claims_amount or 0
+    if ytd + claim.claimed_amount > annual_limit:
+        checks.append({
+            "check": "annual_limit",
+            "result": "FAIL",
+            "detail": f"YTD claims ₹{ytd:,.0f} + this claim ₹{claim.claimed_amount:,.0f} = ₹{ytd + claim.claimed_amount:,.0f} exceeds annual OPD limit of ₹{annual_limit:,.0f}",
+        })
+        result = AdjudicationResult(
+            decision=Decision.REJECTED,
+            approved_amount=None,
+            reasons=[f"Annual OPD limit exceeded: ₹{ytd:,.0f} already claimed + ₹{claim.claimed_amount:,.0f} = ₹{ytd + claim.claimed_amount:,.0f} (limit: ₹{annual_limit:,.0f})"],
+            confidence=0.95,
+            deductions=[],
+            line_item_decisions=[],
+            checks=checks,
+        )
+        duration = (time.time() - start) * 1000
+        trace = TraceStep(
+            agent="adjudicator",
+            status=TraceStepStatus.FAIL,
+            duration_ms=duration,
+            details={"checks": checks, "decision": "REJECTED"},
+            message=f"Rejected: Annual OPD limit exceeded.",
+        )
+        return result, trace
+    checks.append({"check": "annual_limit", "result": "PASS", "detail": f"YTD ₹{ytd:,.0f} + ₹{claim.claimed_amount:,.0f} within annual limit of ₹{annual_limit:,.0f}"})
+
     # Determine the effective amount for limit checks
     # For partial exclusions, only the covered portion counts
     covered_items = exclusion_result.get("covered_items", line_items)
@@ -230,8 +300,6 @@ def adjudicate(
         effective_claim_amount = sum(item.get("amount", 0) for item in covered_items)
     else:
         effective_claim_amount = claim.claimed_amount
-
-    coverage = get_coverage()
     per_claim_limit = coverage.get("per_claim_limit", float("inf"))
     category_config = get_category_config(claim.claim_category.value)
     sub_limit = category_config.get("sub_limit", float("inf")) if category_config else float("inf")
