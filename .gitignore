@@ -13,6 +13,4 @@ backend/uploads/
 .env
 CLAUDE.md
 AGENTS.md
-docs/EVAL_REPORT.md
-docs/ARCHITECTURE.md
 

@@ -155,7 +155,9 @@ claims-processor/
 │           ├── ClaimForm.tsx     # Claim submission with document upload
 │           └── DecisionView.tsx  # Decision card + trace viewer
 ├── docs/
+│   ├── ARCHITECTURE.md          # System design, trade-offs, scaling
 │   ├── COMPONENT_CONTRACTS.md   # Interface specifications for each agent
+│   ├── EVAL_REPORT.md           # All 12 test case results with traces
 │   ├── claims_architecture_member_decision_only.svg
 │   └── admin_manual_review_flow_no_member_email.svg
 └── Makefile
@@ -191,4 +193,6 @@ claims-processor/
 
 ## Documentation
 
+- [Architecture Document](docs/ARCHITECTURE.md) — system design, trade-offs, scaling strategy
 - [Component Contracts](docs/COMPONENT_CONTRACTS.md) — input/output specs for each agent
+- [Eval Report](docs/EVAL_REPORT.md) — all 12 test case results with traces
