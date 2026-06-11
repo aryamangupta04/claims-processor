@@ -30,13 +30,13 @@ export default function AdminPage() {
   useEffect(() => {
     const saved = localStorage.getItem("adminSession");
     if (saved) {
-      const { username: u, password: p, token: t } = JSON.parse(saved);
-      setUsername(u);
-      setPassword(p);
-      setToken(t || "");
-      setLoggedIn(true);
-      const header = t ? `Bearer ${t}` : "Basic " + btoa(`${u}:${p}`);
-      loadDashboardWithAuth(header);
+      const { username: u, token: t } = JSON.parse(saved);
+      if (t) {
+        setUsername(u);
+        setToken(t);
+        setLoggedIn(true);
+        loadDashboardWithAuth(`Bearer ${t}`);
+      }
     }
   }, []);
 
@@ -54,7 +54,7 @@ export default function AdminPage() {
         const t = data.token || "";
         setToken(t);
         setLoggedIn(true);
-        localStorage.setItem("adminSession", JSON.stringify({ username, password, token: t }));
+        localStorage.setItem("adminSession", JSON.stringify({ username, token: t }));
         loadDashboard();
       } else {
         setLoginError("Invalid username or password");

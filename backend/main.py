@@ -142,30 +142,15 @@ def _process_claim_background(claim: ClaimSubmission, claim_id: str):
 
 @app.post("/api/claims")
 async def submit_claim(claim: ClaimSubmission, request: Request):
-    """Submit a claim — requires auth. Returns immediately with UNDER_REVIEW status."""
+    """Submit a claim — requires auth. Identity comes from token, not request body."""
     user = auth.require_member(request)
     import uuid
     claim_id = f"CLM_{uuid.uuid4().hex[:8].upper()}"
 
-    # Resolve member
-    if not claim.member_id and claim.member_name:
-        member = database.get_member_by_name(claim.member_name)
-        if member:
-            claim.member_id = member["member_id"]
-        else:
-            return {
-                "claim_id": claim_id,
-                "status": "REJECTED",
-                "summary": f"Member '{claim.member_name}' not found in our system.",
-                "error_message": "No member found with that name. Please ensure the name matches your policy records.",
-            }
-    elif not claim.member_id:
-        return {
-            "claim_id": claim_id,
-            "status": "REJECTED",
-            "summary": "No member information provided.",
-            "error_message": "Please provide your full name and Employee ID.",
-        }
+    # Enforce identity from token — members can only submit claims as themselves
+    if user["role"] != "admin":
+        claim.member_id = user["member_id"]
+        claim.member_name = user.get("name")
 
     # Verify member exists
     member = database.get_member(claim.member_id)
@@ -175,15 +160,6 @@ async def submit_claim(claim: ClaimSubmission, request: Request):
             "status": "REJECTED",
             "summary": f"Employee ID '{claim.member_id}' not found.",
             "error_message": "Please check your Employee ID and try again.",
-        }
-
-    # Verify name matches if both provided
-    if claim.member_name and member["name"].lower() != claim.member_name.strip().lower():
-        return {
-            "claim_id": claim_id,
-            "status": "REJECTED",
-            "summary": f"Name '{claim.member_name}' does not match Employee ID '{claim.member_id}' (registered to '{member['name']}').",
-            "error_message": "The name and Employee ID don't match. Please verify your details.",
         }
 
     # Save as UNDER_REVIEW immediately
@@ -216,12 +192,17 @@ async def submit_claim(claim: ClaimSubmission, request: Request):
 
 @app.get("/api/claims/{claim_id}")
 async def get_claim(claim_id: str, request: Request):
-    """Get claim status — requires auth."""
-    auth.require_member(request)
+    """Get claim status — requires auth, members can only access their own claims."""
+    user = auth.require_member(request)
+    conn = database.get_connection()
+
+    # Check ownership
+    owner_row = conn.execute("SELECT member_id FROM claims WHERE claim_id=?", (claim_id,)).fetchone()
+    if owner_row and user["role"] != "admin" and owner_row["member_id"] != user["member_id"]:
+        raise HTTPException(status_code=403, detail="You can only access your own claims")
+
     claim_data = database.get_claim(claim_id)
     if not claim_data:
-        # Check if it's still UNDER_REVIEW (no full_decision yet)
-        conn = database.get_connection()
         row = conn.execute(
             "SELECT claim_id, member_name, status, claimed_amount, summary FROM claims WHERE claim_id=?",
             (claim_id,),
@@ -343,7 +324,8 @@ async def admin_stats(request: Request):
 # ============ PUBLIC ENDPOINTS ============
 
 @app.get("/api/policy/members")
-async def get_members():
+async def get_members(request: Request):
+    auth.require_member(request)
     members = database.get_all_members()
     return {"members": members}
 
