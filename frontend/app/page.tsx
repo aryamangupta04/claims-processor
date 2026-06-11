@@ -145,7 +145,8 @@ export default function Home() {
       if (res.ok) {
         setTestResults(await res.json());
       } else {
-        setError("Failed to run test suite — admin access required");
+        const errData = await res.json().catch(() => ({}));
+        setError(`Test suite failed: ${errData.detail || res.status}`);
       }
     } catch (e: any) {
       setError(e.message || "Failed to run test suite");
