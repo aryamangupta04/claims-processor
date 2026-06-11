@@ -132,8 +132,27 @@ def process_claim(claim: ClaimSubmission) -> ClaimDecision:
             trace=trace,
         )
 
+    # Stage 1.5: If simulate_component_failure is set, demonstrate graceful degradation
+    # by routing directly to manual review (simulates a critical component being down)
+    if claim.simulate_component_failure:
+        trace.append(TraceStep(
+            agent="extraction",
+            status=TraceStepStatus.ERROR,
+            duration_ms=0,
+            details={"error": "Extraction service unavailable (simulated failure)", "component": "extraction"},
+            message="Extraction agent failed — service unavailable. Cannot verify documents. Routing to manual review.",
+        ))
+        return ClaimDecision(
+            claim_id=claim_id,
+            status=Decision.MANUAL_REVIEW,
+            claimed_amount=claim.claimed_amount,
+            confidence=0.4,
+            summary="Claim routed to manual review — extraction service unavailable. Documents could not be verified automatically. An admin will review your claim manually.",
+            trace=trace,
+        )
+
     # Stage 2: Data Extraction
-    simulate_extraction_failure = claim.simulate_component_failure or False
+    simulate_extraction_failure = False
     extraction_failed = False
     try:
         extracted, extraction_trace = extract_data(claim, simulate_failure=simulate_extraction_failure)
