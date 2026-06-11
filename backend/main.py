@@ -367,9 +367,9 @@ async def run_test_suite(request: Request):
     import json as json_mod
     from pathlib import Path
 
-    test_cases_path = Path(__file__).parent.parent / "test_cases.json"
+    test_cases_path = Path(__file__).parent / "test_cases.json"
     if not test_cases_path.exists():
-        test_cases_path = Path(__file__).parent.parent.parent / "test_cases.json"
+        test_cases_path = Path(__file__).parent.parent / "test_cases.json"
 
     with open(test_cases_path) as f:
         test_data = json_mod.load(f)
