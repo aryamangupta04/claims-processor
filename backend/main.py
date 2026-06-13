@@ -78,7 +78,6 @@ def _process_claim_background(claim: ClaimSubmission, claim_id: str):
         decision_dict["claim_category"] = claim.claim_category.value
         decision_dict["treatment_date"] = claim.treatment_date
         decision_dict["hospital_name"] = claim.hospital_name
-        decision_dict["trace"] = [step.model_dump() for step in decision.trace]
 
         # Update the existing UNDER_REVIEW claim with the final decision
         conn = database.get_connection()
@@ -427,7 +426,6 @@ async def run_test_suite(request: Request):
         decision_dict["claim_category"] = inp["claim_category"]
         decision_dict["treatment_date"] = inp["treatment_date"]
         decision_dict["hospital_name"] = inp.get("hospital_name")
-        decision_dict["trace"] = [step.model_dump() for step in decision.trace]
         member_info = database.get_member(inp["member_id"])
         member_name_val = member_info["name"] if member_info else inp["member_id"]
         conn = database.get_connection()
