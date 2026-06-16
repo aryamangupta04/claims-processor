@@ -181,7 +181,31 @@ def process_claim(claim: ClaimSubmission) -> ClaimDecision:
             confidence=0.3,
         )
 
-    # Stage 2.5: If extraction failed or produced nothing usable, don't auto-approve
+    # Stage 2.5a: If LLM validation flagged inconsistencies, don't auto-approve
+    llm_validation = extraction_trace.details.get("llm_validation") if extraction_trace else None
+    if llm_validation and llm_validation.get("is_consistent") is False:
+        issues = llm_validation.get("issues", [])
+        trace.append(TraceStep(
+            agent="llm_integrity_check",
+            status=TraceStepStatus.FAIL,
+            duration_ms=0,
+            details={
+                "is_consistent": False,
+                "issues": issues,
+                "reasoning": llm_validation.get("reasoning", ""),
+            },
+            message=f"Document content flagged as inconsistent by AI validation: {'; '.join(issues)}. Routing to manual review.",
+        ))
+        return ClaimDecision(
+            claim_id=claim_id,
+            status=Decision.MANUAL_REVIEW,
+            claimed_amount=claim.claimed_amount,
+            confidence=0.3,
+            summary=f"Claim routed to manual review — AI validation detected inconsistencies in your documents: {'; '.join(issues)}. An admin will review your claim.",
+            trace=trace,
+        )
+
+    # Stage 2.5b: If extraction failed or produced nothing usable, don't auto-approve
     if extraction_failed or (extracted.confidence <= 0.2 and not extracted.patient_name and not extracted.diagnosis):
         trace.append(TraceStep(
             agent="extraction_gate",
